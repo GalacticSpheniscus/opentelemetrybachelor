@@ -1,0 +1,104 @@
+$worker_joining = <<-SCRIPT
+
+set -euxo pipefail
+config_path="/vagrant/k8s_configuration"
+
+/bin/bash $config_path/join.sh -v
+
+sudo -i -u vagrant bash << EOF
+mkdir -p /home/vagrant/.kube
+sudo cp -i $config_path/config /home/vagrant/.kube/
+sudo chown 1000:1000 /home/vagrant/.kube/config
+NODENAME=$(hostname -s)
+kubectl label node $(hostname -s) node-role.kubernetes.io/worker=worker
+SCRIPT
+
+$master_setup = <<-SCRIPT
+
+set -euxo pipefail
+NODENAME=$(hostname -s)
+
+sudo kubeadm config images pull
+
+sudo kubeadm init --apiserver-advertise-address=$CONTROL_IP --apiserver-cert-extra-sans=$CONTROL_IP --pod-network-cidr=$POD_CIDR --service-cidr=$SERVICE_CIDR --node-name "$NODENAME" --ignore-preflight-errors Swap
+
+mkdir -p "$HOME"/.kube
+sudo cp -i /etc/kubernetes/admin.conf "$HOME"/.kube/config
+sudo chown "$(id -u)":"$(id -g)" "$HOME"/.kube/config
+
+config_path="/vagrant/k8s_configuration"
+
+mkdir -p $config_path
+
+cp -i /etc/kubernetes/admin.conf $config_path/config
+touch $config_path/join.sh
+chmod +x $config_path/join.sh
+
+kubeadm token create --print-join-command > $config_path/join.sh
+
+kubectl apply -f /vagrant/calico_3280.yaml
+
+sudo -i -u vagrant bash << EOF
+mkdir -p /home/vagrant/.kube
+sudo cp -i $config_path/config /home/vagrant/.kube/
+sudo chown 1000:1000 /home/vagrant/.kube/config
+SCRIPT
+
+
+vagrant_root = File.dirname(File.expand_path(__FILE__))
+
+NUM_WORKERS = 4
+IP_S = "10.0.0.10".split('.')
+IP_PREFIX = IP_S[0..-2].join('.') + '.'
+IP_SUFFIX = IP_S[-1].to_i
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-22.04"
+  config.vm.box_check_update = true
+
+  config.vm.provision "shell", env: { "IP_PREFIX" => IP_PREFIX, "IP_SUFFIX" => IP_SUFFIX, "NUM_WORKERS" => NUM_WORKERS }, inline: <<-SHELL
+      apt-get update -y
+      echo "$IP_PREFIX$((IP_SUFFIX)) master" >> /etc/hosts
+      for i in `seq 1 ${NUM_WORKERS}`; do
+        echo "$IP_PREFIX$((IP_SUFFIX+i)) worker${i}" >> /etc/hosts
+      done
+  SHELL
+
+  config.vm.define "master" do |master|
+    master.vm.hostname = "master"
+    master.vm.network "private_network", ip: "10.0.0.10"
+
+    master.vm.provider "virtualbox" do |vb|
+        vb.cpus = 5
+        vb.memory = 6000
+        vb.customize ["modifyvm", :id, "--groups", ("/" + "k8s-cluster")]
+    end
+
+    master.vm.provision "shell",
+      path: "generic_vm_setup.sh"
+    master.vm.provision "shell",
+      env: {
+        "CONTROL_IP" => "10.0.0.10",
+        "POD_CIDR" => "172.16.1.0/16",
+        "SERVICE_CIDR" => "172.17.1.0/18"
+      },
+      inline: $master_setup
+  end
+
+  (1..NUM_WORKERS).each do |i|
+    config.vm.define "worker#{i}" do |worker|
+      worker.vm.hostname = "worker#{i}"
+      worker.vm.network "private_network", ip: IP_PREFIX + "#{IP_SUFFIX + i}"
+
+      worker.vm.provider "virtualbox" do |vb|
+          vb.cpus = 4
+          vb.memory = 5000
+          vb.customize ["modifyvm", :id, "--groups", ("/" + "k8s-cluster")]
+      end
+
+      worker.vm.provision "shell",
+        path: "generic_vm_setup.sh"
+      worker.vm.provision "shell", inline: $worker_joining
+    end
+  end
+end

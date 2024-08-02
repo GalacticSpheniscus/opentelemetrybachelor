@@ -1,0 +1,42 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: simplest
+spec:
+  image: "otel/opentelemetry-collector:latest"
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+    exporters:
+      logging:
+        loglevel: debug
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: "otelcol"
+      otlp:
+        endpoint: "my-tempo.default.svc.cluster.local:4317"
+        tls:
+          insecure: true
+    service:
+      telemetry:
+        logs:
+          level: "DEBUG"
+          development: true
+          encoding: "json"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: []
+          exporters: [otlp, logging]
+        metrics:
+          receivers: [otlp]
+          exporters: [prometheus, logging]
+        logs:
+          receivers: [otlp]
+          exporters: [otlp, logging]

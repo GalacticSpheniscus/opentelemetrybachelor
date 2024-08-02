@@ -1,0 +1,161 @@
+ABLAUF
+---------------------------------------
+
+
+set KUBECONFIG="C:\Users\leo\Desktop\k8s-otel-kubeconfig.yaml"
+%KUBECONFIG%
+
+$env:KUBECONFIG ="C:\Users\leo\Desktop\k8s-otel-kubeconfig.yaml"
+echo $env:KUBECONFIG
+
+
+---------------------------------------
+
+
+
+1) Zuerst muss der cert-manager installiert werden Dies ist eine der notwendigen Bedingungen für die erfolgreiche Nutzung des OpenTelemetry Operators
+
+kubectl apply -f cert-manager.yaml
+
+oder
+
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.0/cert-manager.yaml
+
+---------------------------------------
+
+
+2) Nun kann der Operator (Release v0.104.0) installiert werden. Vorzugsweise folgendermaßen:
+
+kubectl apply -f opentelemetry-operator.yaml
+
+oder
+
+kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/latest/download/opentelemetry-operator.yaml
+
+Bemerkung: Es gibt auch ein Helm Chart dazu. Es können hier aber aktuell einige Unterschiede entstehen. Falls gewünscht:
+
+helm install opentelemetry-operator open-telemetry/opentelemetry-operator \
+--set "manager.collectorImage.repository=otel/opentelemetry-collector-k8s"
+
+
+
+---------------------------------------
+
+
+3) Als nächstes wird der OpenTelemetry Kollektor deployed. Dieser ist bereits für Prometheus und Tempo richtig konfiguriert.
+
+kubectl apply -f collector-complete.yaml
+
+
+---------------------------------------
+
+4) In der Instrumentation wird konfiguriert, wie die Apps genau instrumentiert werden. Abhängig von der Sprache können z.B.
+unterschiedliche Ports eingestellt werden. Das ist wichtig, da OpenTelemetry aktuell noch nicht vollständig einheitlich bei
+den Endpoints der Agenten ist. So muss z.B. zwischen Java und Python unterschieden werden, sonst werden falsche Protokolle verwendetet
+(gRPC statt http). Anmerkung: Der Versuch die env über die yaml Dateien der zu deployenden Apps zu setzen führt dazu, dass die Automatische
+Injezierung nicht mehr funktioniert. Aus diesem Grund sollten Umgebungsvariablen über die Instrumentation gesetzt werden.
+
+kubectl apply -f instrumentation.yaml
+
+
+---------------------------------------
+
+
+
+5) Nun können Prometheus, Tempo und Grafana deployed werden.
+
+kubectl apply -f prometheus-config.yaml
+kubectl apply -f prometheus-deployment.yaml
+
+helm repo add grafana https://grafana.github.io/helm-charts
+helm install my-tempo grafana/tempo --version 1.9.0
+helm install my-grafana grafana/grafana --version 8.0.2
+
+Aus Gründen der Vollständigkeit wurden diese Helm Charts auch in das Repository eingefügt. Falls Gewünscht in die Verzeichnisse wechseln und:
+helm install my-tempo .
+helm install my-grafana .
+
+
+
+
+
+Zugangsdaten für Grafana:
+--------------------------
+Username: admin
+Das Passwort findet man mit dem folgendem Befehl (falls man im Windows ist, Powershell):
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret --namespace default my-grafana -o jsonpath="{.data.admin-password}")))
+Bei der Nutzung von Linux wird eine Anleitung bei der Installierung des Grafana Helm Charts angegeben.
+
+
+Zuletzt werden in Grafana die folgenden Datasource's hinzugefügt:
+http://prometheus.default.svc.cluster.local:9090
+http://my-tempo.default.svc.cluster.local:3100
+
+
+
+---------------------------------------
+
+
+
+6.1) Jetzt is es möglich die Apps ins Cluster zu deployen.
+
+kubectl apply -f java-minimal.yaml
+kubectl apply -f python-minimal.yaml
+kubectl apply -f dotnet-minimal.yaml
+kubectl apply -f nodejs-minimal.yaml
+
+
+6.2) Go Instrumentierung ist aktuell noch in Entwicklung! 
+
+Um eine erfolgreiche Go Instrumentierung sicherzustellen muss der Controller über Feature Gates zusätzlich konfiguriert werden.
+Dies ist aktuell schlecht dokumnetiert und nur ein provisorischer Mechanismus. Dafür muss erst Mal der Controller eingesehen werden:
+
+kubectl edit deployment opentelemetry-operator-controller-manager -n opentelemetry-operator-system
+
+In der Konfiguration muss jetzt das Feature Gate
+
+--enable-go-instrumentation=true
+
+gesetzt werden. Siehe dafür als Vorlage "operator-controller.yaml". Nachdem die Änderungen vorgenommen wurden kann anschließend die App deployed werden: 
+
+kubectl apply -f golang-minimal.yaml
+
+Eigentlich sollte die Go-Instrumentierung per Default funktionieren, leider ist dies aktuell nicht der Fall (Ende Juli 2024). Es werden nur Traces erfasst; der Grund für die fehlende Erfassung der Metriken ist noch unbekannt.
+
+---------------------------------------
+
+
+
+7) Als nächstes kann folgende von Google entwickelte Microservice WebApp deployed werden. Am Anfang im Namespace
+default, da man sonst den Operator umkonfigurieren müsste. Noch werden die Boutique Apps nicht instrumentiert.
+Vor der Ausführung muss man in das Verzeichnis "microservices-demo-main/helm-chart" wechseln.
+
+helm install online-boutique . --namespace default
+
+
+
+---------------------------------------
+
+
+
+8) Nun müssen die OpenTelemetry Annotations hinzugefügt werden, damit die Agenten injiziert werden. In das Verzeichnis mit dem modifizierten
+Helm-Chart wechseln und anschließend ein Upgrade ausführen:
+
+helm upgrade online-boutique . --namespace default
+
+
+
+---------------------------------------
+
+
+Für die Erörterung der Ergebnisse siehe Bachelorarbeit. Zusammengefasst: Die Instrumentierung sollte erfolgreich sein.
+
+
+---------------------------------------
+
+OpenTelemetry Demo Application:
+
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+
+helm install my-otel-demo open-telemetry/opentelemetry-demo
+

@@ -1,0 +1,35 @@
+For Vagrant:
+-------------------------------------------------------
+cd vagrant_setup
+vagrant up
+export KUBECONFIG=$(pwd)/config
+vagrant halt
+vagrant destroy -f
+
+For k8s:
+-------------------------------------------------------
+set KUBECONFIG="pathto\config"
+%KUBECONFIG%
+
+$env:KUBECONFIG = "pathto\config"
+echo $env:KUBECONFIG
+
+For Grafana (Windows):
+-------------------------------------------------------
+Passwort herausfinden:
+
+$base64Password = kubectl get secret --namespace default my-grafana -o jsonpath="{.data.admin-password}"
+$decodedPassword = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($base64Password))
+$decodedPassword
+
+Oder in einer Zeile:
+
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String((kubectl get secret --namespace default my-grafana -o jsonpath="{.data.admin-password}")))
+
+Port-Forwarding:
+
+$POD_NAME = kubectl get pods --namespace default -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=my-grafana" -o jsonpath="{.items[0].metadata.name}"
+Write-Output "Grafana Pod Name: $POD_NAME"
+kubectl --namespace default port-forward $POD_NAME 3000:3000
+
+

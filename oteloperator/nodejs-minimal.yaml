@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejsminimalapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nodejsminimalapp
+  template:
+    metadata:
+      annotations:
+        instrumentation.opentelemetry.io/inject-nodejs: "true"
+      labels:
+        app: nodejsminimalapp
+    spec:
+      containers:
+      - name: nodejsminimalapp
+        image: leocaptain/nodejsminimal
+        ports:
+        - containerPort: 3000

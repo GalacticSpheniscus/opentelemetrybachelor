@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: golangminimal
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: golangminimal
+  template:
+    metadata:
+      annotations:
+        instrumentation.opentelemetry.io/inject-go: "true"
+        instrumentation.opentelemetry.io/otel-go-auto-target-exe: '/main'
+      labels:
+        app: golangminimal
+    spec:
+      containers:
+      - name: golangminimal
+        image: leocaptain/golangmin
+        ports:
+        - containerPort: 3000
+        securityContext:
+          capabilities:
+            add:
+              - SYS_PTRACE
+          privileged: true
+          runAsUser: 0
