@@ -20,4 +20,6 @@ Die Vagrant- und Shell-Skripte für den Aufbau des K8s Clusters sind in dem Verz
 Der Source Code ist unverändert zu der originellen OpenTelemetry Demo App in dem Verzeichnis "opentelemetry-demo-main" zu finden.
 Zusätzlich wurden auch die Helm-Charts hinzugefügt, über die die Anwendung im Cluster deployed werden kann.
 
+## Video
 
+For the video visit:
